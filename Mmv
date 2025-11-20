@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Memory Management Visualizer — Paging & Simple Segmentation</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071024 0%, #07192a 100%);color:#e6eef6;padding:18px}
+    .wrap{max-width:1000px;margin:0 auto}
+    header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}.panel{background:var(--card);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:12px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+input[type=text], input[type=number], textarea, select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit}
+textarea{min-height:66px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.btn{background:linear-gradient(90deg,var(--accent),#60a5fa);border:none;padding:8px 12px;border-radius:10px;color:#022;cursor:pointer;font-weight:600}
+.btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+.frames{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.frame{width:68px;height:64px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:center;flex-direction:column;border:1px solid rgba(255,255,255,0.03)}
+.frame .pnum{font-size:18px;font-weight:700}
+.frame .meta{font-size:11px;color:var(--muted)}
+
+.ref-row{display:flex;flex-wrap:wrap;gap:6px}
+.ref-item{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);min-width:36px;text-align:center}
+.ref-item.active{outline:3px solid rgba(6,182,212,0.14);background:linear-gradient(90deg, rgba(6,182,212,0.06), rgba(96,165,250,0.02));}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+.stat{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;min-width:140px}
+.small{font-size:12px;color:var(--muted)}
+footer.small{color:var(--muted);text-align:center;margin-top:8px}
+
+/* responsive */
+@media (max-width:900px){.grid{grid-template-columns:1fr;}.panel{padding:12px}}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Memory Management Visualizer</h1>
+        <p class="lead">Beginner-friendly demo: paging + a simple segmentation helper. Enter frames & reference string, then step through FIFO / LRU / Optimal.</p>
+      </div>
+    </header><div class="grid">
+  <div>
+    <section class="panel">
+      <label>Number of Frames (physical frames)</label>
