@@ -1,0 +1,371 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Memory Management Visualizer — Paging & Simple Segmentation</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071024 0%, #07192a 100%);color:#e6eef6;padding:18px}
+    .wrap{max-width:1000px;margin:0 auto}
+    header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}.panel{background:var(--card);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:12px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+input[type=text], input[type=number], textarea, select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit}
+textarea{min-height:66px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.btn{background:linear-gradient(90deg,var(--accent),#60a5fa);border:none;padding:8px 12px;border-radius:10px;color:#022;cursor:pointer;font-weight:600}
+.btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+.frames{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.frame{width:68px;height:64px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:center;flex-direction:column;border:1px solid rgba(255,255,255,0.03)}
+.frame .pnum{font-size:18px;font-weight:700}
+.frame .meta{font-size:11px;color:var(--muted)}
+
+.ref-row{display:flex;flex-wrap:wrap;gap:6px}
+.ref-item{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);min-width:36px;text-align:center}
+.ref-item.active{outline:3px solid rgba(6,182,212,0.14);background:linear-gradient(90deg, rgba(6,182,212,0.06), rgba(96,165,250,0.02));}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+.stat{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;min-width:140px}
+.small{font-size:12px;color:var(--muted)}
+footer.small{color:var(--muted);text-align:center;margin-top:8px}
+
+/* responsive */
+@media (max-width:900px){.grid{grid-template-columns:1fr;}.panel{padding:12px}}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Memory Management Visualizer</h1>
+        <p class="lead">Beginner-friendly demo: paging + a simple segmentation helper. Enter frames & reference string, then step through FIFO / LRU / Optimal.</p>
+      </div>
+    </header><div class="grid">
+  <div>
+    <section class="panel">
+      <label>Number of Frames (physical frames)</label>
+      <input id="framesCount" type="number" min="1" step="1" value="3" />
+
+      <div style="height:8px"></div>
+      <label>Page size (bytes) — informational (used when converting addresses)</label>
+      <input id="pageSize" type="number" min="1" value="4096" />
+
+      <div style="height:8px"></div>
+      <label>Reference string (comma-separated page numbers or decimal logical addresses)</label>
+      <textarea id="refInput" placeholder="e.g. 7,0,1,2,0,3,0,4,2,3,0,3,2">7,0,1,2,0,3,0,4,2,3,0,3,2</textarea>
+
+      <div style="height:8px"></div>
+      <label>Interpretation</label>
+      <select id="refMode">
+        <option value="pages">Input is page numbers (default)</option>
+        <option value="addresses">Input is logical addresses (will be divided by page size)</option>
+      </select>
+
+      <div style="height:8px"></div>
+      <label>Algorithm</label>
+      <select id="algo">
+        <option value="FIFO">FIFO (First-In First-Out)</option>
+        <option value="LRU">LRU (Least Recently Used)</option>
+        <option value="OPT">Optimal (Belady)</option>
+      </select>
+
+      <div style="height:10px"></div>
+      <div class="controls">
+        <button class="btn" id="initBtn">Initialize / Load</button>
+        <button class="btn-ghost" id="stepBtn">Step</button>
+        <button class="btn-ghost" id="playBtn">Play</button>
+        <button class="btn-ghost" id="resetBtn">Reset</button>
+        <button class="btn-ghost" id="exportBtn">Export CSV</button>
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="small">Notes: This single-file project is meant for classroom demo and extension. It focuses on paging; a basic segmentation helper below shows mapping of segments to pages (optional).</div>
+    </section>
+
+    <section class="panel" id="segmentationPanel">
+      <label>Simple segmentation helper (optional)</label>
+      <div class="small">Enter segments for a process as start,length pairs (logical addresses). This small helper will convert logical addresses into pages and show page numbers in the reference string when you click "Map Addresses".</div>
+      <div style="height:8px"></div>
+      <textarea id="segmentsInput" placeholder="e.g. 0,8192\n16384,4096">0,8192
+
+16384,4096</textarea> <div style="height:8px"></div> <div class="controls"> <button class="btn-ghost" id="mapAddrBtn">Map Addresses</button> <button class="btn-ghost" id="clearSegBtn">Clear</button> </div> </section>
+
+</div>
+
+  <aside>
+    <section class="panel">
+      <label>Frames (physical)</label>
+      <div class="frames" id="framesView"></div>
+      <div style="height:10px"></div>
+      <div class="small">Reference string:</div>
+      <div class="ref-row" id="refView" style="margin-top:8px"></div>
+
+      <div class="stats">
+        <div class="stat"><div class="small">Steps</div><div id="stepCount">0</div></div>
+        <div class="stat"><div class="small">Page Faults</div><div id="faultCount">0</div></div>
+        <div class="stat"><div class="small">Hit Ratio</div><div id="hitRatio">0%</div></div>
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="controls">
+        <button class="btn-ghost" id="explainBtn">Explain last action</button>
+      </div>
+      <div style="height:10px"></div>
+      <div class="small" id="explainBox">No actions yet.</div>
+    </section>
+
+    <section class="panel">
+      <label>Quick tips / rubric for demo</label>
+      <ul class="small">
+        <li>Explain the reference string and the meaning of frames.</li>
+        <li>Show page hits vs page faults visually — point out victims chosen by algorithm.</li>
+        <li>Run multiple algorithms on the same string to compare fault counts.</li>
+        <li>Ask classmates to propose a string and predict faults before running.</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+
+<footer class="small">Open the file in any modern browser to run. Feel free to modify and extend for segmentation/paged-segmentation exercises.</footer>
+
+  </div>  <script>
+    // Basic single-file memory visualizer
+    // Data model
+    let state = {
+      framesCount: 3,
+      pageSize: 4096,
+      refs: [], // array of page numbers
+      mode: 'pages',
+      algo: 'FIFO',
+      currentStep: 0,
+      frames: [], // holds page numbers or null
+      faultCount: 0,
+      history: [], // record per-step events
+      playing: false,
+      playInterval: null
+    }
+
+    // DOM
+    const framesView = document.getElementById('framesView')
+    const refView = document.getElementById('refView')
+    const stepCount = document.getElementById('stepCount')
+    const faultCount = document.getElementById('faultCount')
+    const hitRatio = document.getElementById('hitRatio')
+    const explainBox = document.getElementById('explainBox')
+
+    // init UI references
+    document.getElementById('initBtn').addEventListener('click', initialize)
+    document.getElementById('stepBtn').addEventListener('click', step)
+    document.getElementById('playBtn').addEventListener('click', togglePlay)
+    document.getElementById('resetBtn').addEventListener('click', reset)
+    document.getElementById('exportBtn').addEventListener('click', exportCSV)
+    document.getElementById('mapAddrBtn').addEventListener('click', mapAddressesFromSegments)
+    document.getElementById('clearSegBtn').addEventListener('click', () => {document.getElementById('segmentsInput').value=''} )
+    document.getElementById('explainBtn').addEventListener('click', ()=>{ alert(explainBox.textContent) })
+
+    function parseRefs(input, mode) {
+      if(!input) return []
+      const toks = input.split(/[,\s]+/g).filter(Boolean)
+      if(mode==='pages') return toks.map(x => parseInt(x,10)).filter(n=>!isNaN(n))
+      // addresses -> convert to page numbers by dividing by page size
+      const pageSize = parseInt(document.getElementById('pageSize').value) || 4096
+      return toks.map(x=>Math.floor(parseInt(x,10)/pageSize)).filter(n=>!isNaN(n))
+    }
+
+    function initialize(){
+      // read inputs
+      state.framesCount = Math.max(1, parseInt(document.getElementById('framesCount').value) || 3)
+      state.pageSize = Math.max(1, parseInt(document.getElementById('pageSize').value) || 4096)
+      state.mode = document.getElementById('refMode').value
+      state.algo = document.getElementById('algo').value
+      state.refs = parseRefs(document.getElementById('refInput').value, state.mode)
+
+      state.currentStep = 0
+      state.frames = Array(state.framesCount).fill(null)
+      state.faultCount = 0
+      state.history = []
+      state.playing = false
+      if(state.playInterval) { clearInterval(state.playInterval); state.playInterval=null }
+
+      renderFrames(); renderRefs(); updateStats(); explainBox.textContent='Initialized. Click Step to start.'
+    }
+
+    function renderFrames(highlightIndex=-1){
+      framesView.innerHTML=''
+      for(let i=0;i<state.framesCount;i++){
+        const f = document.createElement('div'); f.className='frame';
+        if(i===highlightIndex) f.style.boxShadow='inset 0 0 0 3px rgba(6,182,212,0.08)'
+        const p = document.createElement('div'); p.className='pnum'; p.textContent = (state.frames[i]===null?'-':state.frames[i])
+        const m = document.createElement('div'); m.className='meta'; m.textContent = 'frame '+i
+        f.appendChild(p); f.appendChild(m); framesView.appendChild(f)
+      }
+    }
+
+    function renderRefs(){
+      refView.innerHTML=''
+      for(let i=0;i<state.refs.length;i++){
+        const r = document.createElement('div'); r.className='ref-item'; r.textContent=state.refs[i]
+        if(i===state.currentStep) r.classList.add('active')
+        refView.appendChild(r)
+      }
+    }
+
+    function updateStats(){
+      stepCount.textContent = state.currentStep
+      faultCount.textContent = state.faultCount
+      const hits = Math.max(0, state.currentStep - state.faultCount)
+      const ratio = state.currentStep>0 ? Math.round(1000*(hits/state.currentStep))/10 : 0
+      hitRatio.textContent = ratio + '%'
+    }
+
+    function step(){
+      if(state.currentStep >= state.refs.length) { explainBox.textContent = 'Reached end of reference string.'; return }
+      const page = state.refs[state.currentStep]
+      const algo = state.algo
+
+      // check hit
+      const frameIndex = state.frames.indexOf(page)
+      if(frameIndex !== -1){
+        // hit
+        state.history.push({step:state.currentStep, page, type:'hit', frame:frameIndex})
+        explainBox.textContent = `Step ${state.currentStep}: page ${page} — HIT in frame ${frameIndex}.`;
+      } else {
+        // fault — choose victim depending on algo
+        state.faultCount += 1
+        let victim = -1
+        if(state.frames.includes(null)){
+          victim = state.frames.indexOf(null)
+        } else {
+          if(algo==='FIFO') victim = fifoVictim()
+          else if(algo==='LRU') victim = lruVictim()
+          else if(algo==='OPT') victim = optimalVictim(state.currentStep)
+          else victim = 0
+        }
+        const replaced = state.frames[victim]
+        state.frames[victim] = page
+        state.history.push({step:state.currentStep, page, type:'fault', victim, replaced})
+        explainBox.textContent = `Step ${state.currentStep}: page ${page} — FAULT. Placed into frame ${victim}` + (replaced!==null?` (replaced page ${replaced})`:'.')
+      }
+
+      // bookkeeping for LRU: update lastUsed map
+      recordAccessForLRU(state.currentStep)
+
+      state.currentStep += 1
+      renderFrames(); renderRefs(); updateStats()
+    }
+
+    // FIFO victim: use earliest-loaded page. We will track a loadOrder array in state
+    function fifoVictim(){
+      if(!state.loadOrder) state.loadOrder = []
+      // ensure loadOrder length equals framesCount
+      // loadOrder holds page numbers in insertion order
+      // find page in loadOrder that is still in frames
+      for(let i=0;i<state.refs.length;i++){}
+      // update loadOrder from current frames
+      state.loadOrder = state.loadOrder.filter(p=>state.frames.includes(p))
+      // if frames are full, pick the first in loadOrder
+      if(state.loadOrder.length===state.framesCount){
+        const oldest = state.loadOrder.shift()
+        // find index
+        const idx = state.frames.indexOf(oldest)
+        // after shifting oldest removed from list
+        return idx
+      }
+      // fallback
+      return 0
+    }
+
+    // LRU supporting structures
+    function recordAccessForLRU(step){
+      if(!state.lastUsed) state.lastUsed = new Map()
+      // update for all frames present: lastUsed[page] = last access step
+      const last = state.currentStep
+      if(state.frames){
+        state.frames.forEach(p=>{ if(p!==null) state.lastUsed.set(p,last) })
+      }
+    }
+
+    function lruVictim(){
+      if(!state.lastUsed) state.lastUsed = new Map()
+      // choose page with smallest lastUsed (oldest use)
+      let victimPage=null; let oldest=Infinity
+      for(let p of state.frames){ if(p!==null){ const lu = state.lastUsed.get(p); if(lu===undefined) return state.frames.indexOf(p); if(lu < oldest){ oldest = lu; victimPage = p } }}
+      return state.frames.indexOf(victimPage)
+    }
+
+    function optimalVictim(currIndex){
+      // for each page in frames, find next use distance; choose farthest (or never used again)
+      let farthestDist = -1; let victimPage = state.frames[0]
+      for(let p of state.frames){
+        if(p===null) return state.frames.indexOf(p)
+        let foundAt = Infinity
+        for(let i=currIndex+1;i<state.refs.length;i++){ if(state.refs[i]===p){ foundAt = i; break } }
+        const dist = foundAt===Infinity ? Infinity : (foundAt-currIndex)
+        if(dist===Infinity){ victimPage = p; farthestDist = Infinity; break }
+        if(dist > farthestDist){ farthestDist = dist; victimPage = p }
+      }
+      return state.frames.indexOf(victimPage)
+    }
+
+    function togglePlay(){
+      if(state.playing) { state.playing=false; document.getElementById('playBtn').textContent='Play'; if(state.playInterval){clearInterval(state.playInterval);state.playInterval=null} }
+      else { state.playing=true; document.getElementById('playBtn').textContent='Pause'; state.playInterval = setInterval(()=>{ if(state.currentStep < state.refs.length) step(); else { togglePlay() } }, 700) }
+    }
+
+    function reset(){
+      state.currentStep = 0
+      state.frames = Array(state.framesCount).fill(null)
+      state.faultCount = 0
+      state.history = []
+      state.loadOrder = []
+      state.lastUsed = new Map()
+      state.playing = false
+      if(state.playInterval){ clearInterval(state.playInterval); state.playInterval=null }
+      renderFrames(); renderRefs(); updateStats(); explainBox.textContent='Reset to initial state.'
+    }
+
+    function exportCSV(){
+      const rows = [['step','page','type','frame','replaced']]
+      for(const h of state.history){ rows.push([h.step,h.page,h.type,(h.frame ?? h.victim ?? ''),(h.replaced ?? '')]) }
+      const csv = rows.map(r => r.map(c=>`"${String(c).replace(/"/g,'""') }"`).join(',')).join('\n')
+      const blob = new Blob([csv], {type:'text/csv'})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href=url; a.download='memory-sim.csv'; a.click(); URL.revokeObjectURL(url)
+    }
+
+    // segmentation helper: parse segments and map existing refs from addresses -> pages
+    function mapAddressesFromSegments(){
+      const segText = document.getElementById('segmentsInput').value.trim()
+      if(!segText){ alert('Put segment entries as start,length pairs — one per line.'); return }
+      const lines = segText.split('\n').map(s=>s.trim()).filter(Boolean)
+      const segs = []
+      for(const L of lines){ const parts = L.split(/[,\s]+/).map(x=>parseInt(x,10)); if(parts.length<2 || isNaN(parts[0])||isNaN(parts[1])){ alert('Invalid segment line: '+L); return } segs.push({start:parts[0],len:parts[1]}) }
+    
+      const raw = document.getElementById('refInput').value
+      const toks = raw.split(/[,\s]+/g).filter(Boolean)
+      
+      const pageSize = state.pageSize || parseInt(document.getElementById('pageSize').value) || 4096
+      const mapped = []
+      for(const t of toks){ const val = parseInt(t,10); if(isNaN(val)){ mapped.push(t); continue } // keep token
+        
+        const seg = segs.find(s=> val>=s.start && val < s.start + s.len)
+        if(!seg){ 
+          mapped.push(Math.floor(val / pageSize))
+        } else {
+        
+          const offset = val - seg.start
+          mapped.push(Math.floor(offset / pageSize))
+        }
+      }
+      document.getElementById('refInput').value = mapped.join(',')
+      alert('Mapped addresses to page numbers and wrote them to reference string. Now click "Initialize / Load".')
+    }
+    initialize()
+  </script></body>
+</html>
